@@ -1,59 +1,102 @@
-#by t.me/fatherOFpaul
-import random
 from pyrogram import Client, filters
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+import random
+
+# Initialize your Pyrogram bot
 from FallenRobot import pbot as app
 
-# Define the game state
+# Dictionary to store user game states
+user_states = {}
+
+# Define the game logic
+class Game:
+    def __init__(self):
+        self.location = "start"
+        self.gold = 0
+        self.hp = 100
+        self.strength = random.randint(1, 10)
+
+# Image URLs for different locations
+location_images = {
+    "start": "https://example.com/start_image.jpg",
+    "forest": "https://example.com/forest_image.jpg",
+    "cave": "https://example.com/cave_image.jpg",
+    "village": "https://example.com/village_image.jpg",
+    "castle": "https://example.com/castle_image.jpg",
+}
+
+# Define game locations
+locations = {
+    "start": {
+        "description": "You are at the start. Choose your path.",
+        "options": [
+            {"text": "Adventure", "next_location": "forest"},
+            {"text": "Fight", "next_location": "cave"},
+        ],
+    },
+    "forest": {
+        "description": "You venture into the forest.",
+        "options": [
+            {"text": "Explore", "next_location": "village"},
+            {"text": "Return", "next_location": "start"},
+        ],
+    },
+    "cave": {
+        "description": "You enter a dark cave.",
+        "options": [
+            {"text": "Fight the Dragon", "next_location": "castle"},
+            {"text": "Retreat", "next_location": "start"},
+        ],
+    },
+    "village": {
+        "description": "You arrive at a peaceful village.",
+        "options": [
+            {"text": "Trade", "next_location": "forest"},
+            {"text": "Rest", "next_location": "castle"},
+        ],
+    },
+    "castle": {
+        "description": "You approach a grand castle.",
+        "options": [
+            {"text": "Challenge the King", "next_location": "start"},
+            {"text": "Rest", "next_location": "village"},
+        ],
+    },
+}
+
+# Game states
 game_states = {}
-@app.on_message(filters.command("gplay", prefixes="/"))
-async def start_game(client, message):
-    user_id = message.from_user.id
 
-    if user_id not in game_states:
-        game_states[user_id] = {
-            "current_location": "beach",
-            "inventory": [],
-            "score": 0,
-        }
-        await message.reply("Welcome to the Mystery Island Adventure game! You find yourself on a mysterious island. Explore and uncover its secrets.")
-
-@app.on_message(filters.command("explore", prefixes="/"))
-async def explore_location(client, message):
+@app.on_message(filters.command("start"))
+def start_game(client, message):
     user_id = message.from_user.id
-    if user_id in game_states:
-        current_location = game_states[user_id]["current_location"]
+    game = Game()
+    game_states[user_id] = game
+    send_location_description(message, game.location)
+
+def send_location_description(message, location):
+    user_id = message.from_user.id
+    game = game_states.get(user_id)
+
+    if game and location in locations:
+        location_data = locations[location]
+        keyboard = []
+        for option in location_data["options"]:
+            keyboard.append([InlineKeyboardButton(option["text"], callback_data=option["text"])])
         
-        if current_location == "beach":
-            game_states[user_id]["score"] += 10
-            game_states[user_id]["inventory"].append("Seashell")
-            game_states[user_id]["current_location"] = "jungle"
-            await message.reply("You explore the beach and find a seashell. You continue into the dense jungle.")
-        elif current_location == "jungle":
-            game_states[user_id]["score"] += 15
-            game_states[user_id]["current_location"] = "cave"
-            await message.reply("As you journey through the jungle, you discover an entrance to a mysterious cave. You enter the cave.")
-        elif current_location == "cave":
-            game_states[user_id]["score"] += 20
-            game_states[user_id]["current_location"] = "treasure"
-            await message.reply("Inside the cave, you find a hidden treasure chest! You open it and uncover valuable treasures.")
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        message.reply_photo(location_images[location], location_data["description"], reply_markup=reply_markup)
 
-@app.on_message(filters.command("inventory", prefixes="/"))
-async def check_inventory(client, message):
-    user_id = message.from_user.id
-    if user_id in game_states:
-        inventory = game_states[user_id]["inventory"]
-        await message.reply(f"Your inventory contains: {', '.join(inventory)}")
+@app.on_callback_query()
+def handle_callback(client, callback_query):
+    user_id = callback_query.from_user.id
+    game = game_states.get(user_id)
 
-@app.on_message(filters.command("score", prefixes="/"))
-async def check_score(client, message):
-    user_id = message.from_user.id
-    if user_id in game_states:
-        score = game_states[user_id]["score"]
-        await message.reply(f"Your current score is: {score}")
+    if game:
+        user_choice = callback_query.data
+        location_data = locations[game.location]
 
-@app.on_message(filters.command("reset", prefixes="/"))
-async def reset_game(client, message):
-    user_id = message.from_user.id
-    if user_id in game_states:
-        del game_states[user_id]
-        await message.reply("Game progress reset. You can start a new adventure anytime.")
+        if any(option["text"] == user_choice for option in location_data["options"]):
+            next_location = [option["next_location"] for option in location_data["options"] if option["text"] == user_choice][0]
+            game.location = next_location
+            send_location_description(callback_query.message, next_location)
